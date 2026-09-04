@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111613" />
+    <title>Upscayl API · 图片升图工作台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html" aria-label="Upscayl API 首页">
+          <span class="brand-mark">U</span>
+          <span>
+            <strong>UPSCAYL</strong>
+            <small>API WORKBENCH</small>
+          </span>
+        </a>
+        <div class="connection-pill" id="connectionPill" data-state="idle">
+          <span class="status-dot"></span>
+          <span id="connectionText">未连接</span>
+        </div>
+      </header>
+
+      <main class="main-grid">
+        <section class="intro-panel">
+          <p class="kicker">IMAGE UPSCALING / HTTP</p>
+          <h1>让每一张图，<em>清晰地</em>变大。</h1>
+          <p class="intro-copy">
+            直接连接本地 Upscayl API。上传原图，选择模型与输出规格，几秒后拿到可下载的结果。
+          </p>
+          <div class="intro-meta">
+            <span>Vulkan powered</span>
+            <span>PNG · JPG · WEBP</span>
+            <span>50 MB / request</span>
+          </div>
+        </section>
+
+        <section class="workspace-card" aria-label="图片升图工作区">
+          <div class="section-heading">
+            <div>
+              <span class="step-label">01 / INPUT</span>
+              <h2>放入一张图片</h2>
+            </div>
+            <span class="file-hint">PNG, JPG, WEBP</span>
+          </div>
+
+          <label class="dropzone" id="dropzone" for="fileInput" tabindex="0">
+            <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" />
+            <div class="dropzone-copy" id="dropzoneCopy">
+              <span class="upload-symbol" aria-hidden="true">↥</span>
+              <strong>拖入图片，或点击选择</strong>
+              <span>图片会以二进制直接发送到 Upscayl API</span>
+            </div>
+            <img class="input-preview" id="inputPreview" alt="待处理图片预览" />
+          </label>
+          <div class="file-row" id="fileRow" hidden>
+            <div>
+              <strong id="fileName">—</strong>
+              <span id="fileSize">—</span>
+            </div>
+            <button class="text-button" id="clearFile" type="button">移除</button>
+          </div>
+
+          <div class="section-heading settings-heading">
+            <div>
+              <span class="step-label">02 / SETTINGS</span>
+              <h2>告诉它怎么处理</h2>
+            </div>
+            <span class="api-badge">POST /api/upscale</span>
+          </div>
+
+          <div class="form-grid">
+            <label class="field field-wide">
+              <span>AI 模型</span>
+              <select id="modelSelect"></select>
+              <small id="modelDescription">—</small>
+            </label>
+            <label class="field">
+              <span>放大倍数</span>
+              <select id="scaleSelect">
+                <option value="2">2×</option>
+                <option value="3">3×</option>
+                <option value="4" selected>4×</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>输出格式</span>
+              <select id="formatSelect">
+                <option value="png" selected>PNG</option>
+                <option value="jpg">JPG</option>
+                <option value="webp">WEBP</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Tile size <small>可选</small></span>
+              <select id="tileSelect">
+                <option value="0" selected>自动</option>
+                <option value="32">32 · 低显存</option>
+                <option value="64">64 · 平衡</option>
+                <option value="128">128 · 更快</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>GPU ID <small>可选</small></span>
+              <input id="gpuInput" type="text" inputmode="numeric" placeholder="auto" autocomplete="off" />
+            </label>
+          </div>
+
+          <label class="toggle-row">
+            <input id="ttaToggle" type="checkbox" />
+            <span class="toggle-track"><span></span></span>
+            <span><strong>启用 TTA</strong><small>可能提升细节，但处理更慢</small></span>
+          </label>
+
+          <div class="action-row">
+            <button class="primary-button" id="upscaleButton" type="button">
+              <span>开始升图</span>
+              <span aria-hidden="true">→</span>
+            </button>
+            <button class="secondary-button" id="healthButton" type="button">检查 API 连接</button>
+          </div>
+          <p class="error-message" id="errorMessage" role="alert" hidden></p>
+        </section>
+
+        <section class="result-panel" id="resultPanel" aria-live="polite">
+          <div class="section-heading result-heading">
+            <div>
+              <span class="step-label">03 / OUTPUT</span>
+              <h2>结果会出现在这里</h2>
+            </div>
+            <span class="result-status" id="resultStatus">等待图片</span>
+          </div>
+          <div class="result-stage" id="resultStage">
+            <div class="empty-result" id="emptyResult">
+              <span class="crosshair" aria-hidden="true"></span>
+              <strong>还没有结果</strong>
+              <span>选择一张图片并开始处理</span>
+            </div>
+            <div class="loading-result" id="loadingResult" hidden>
+              <div class="loading-line"></div>
+              <strong>正在重建细节</strong>
+              <span>模型正在通过本机 GPU 处理图片</span>
+            </div>
+            <img class="output-preview" id="outputPreview" alt="扩图结果预览" />
+          </div>
+          <div class="result-footer" id="resultFooter" hidden>
+            <div>
+              <span id="outputInfo">—</span>
+              <strong id="outputName">upscaled.png</strong>
+            </div>
+            <a class="download-button" id="downloadButton" download="upscaled.png">下载结果 <span>↓</span></a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <label class="endpoint-field">
+          <span>API endpoint</span>
+          <input id="apiBaseInput" type="url" value="http://127.0.0.1:3000" spellcheck="false" />
+        </label>
+        <p>图片不会上传到第三方服务 · 当前服务默认一次处理一个任务</p>
+      </footer>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

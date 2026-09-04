@@ -163,6 +163,14 @@ You can track all the progress here: https://github.com/orgs/upscayl/projects/1
 
 HTTP 接口启动和对接方式请参阅 [API 对接文档](docs/API-Integration.md)。
 
+网页工作台位于 [`web/`](web/)，启动 API 后可使用项目自带的 Node.js 静态服务器打开：
+
+```sh
+npm run web
+```
+
+然后访问 `http://127.0.0.1:5173`。
+
 I recommend using Volta: https://volta.sh for installing Node.js.
 Download and install volta, then do: `volta install node`.
 

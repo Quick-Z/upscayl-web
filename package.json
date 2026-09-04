@@ -40,6 +40,7 @@
     "start": "tsc && electron .",
     "dev": "tsc && electron .",
     "api": "tsc && node export/server/index.js",
+    "web": "node web/server.js",
     "build": "tsc && npm run validate-schema && next build renderer",
     "tsc": "tsc",
     "pack-app": "tsc && npm run build && electron-builder --dir",

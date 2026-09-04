@@ -40,6 +40,7 @@ npm run api
 | --- | --- | --- | --- |
 | `GET` | `/health` | 检查服务是否在线 | JSON |
 | `GET` | `/api/models` | 获取可用模型名称 | JSON |
+| `GET` | `/api/system/resources` | 获取当前环境的 CPU、内存、磁盘和 GPU 资源 | JSON |
 | `POST` | `/api/upscale` | 执行一次图片扩图 | 图片二进制 |
 
 服务还支持 `OPTIONS` 预检请求，并返回 CORS 响应头。
@@ -102,7 +103,97 @@ curl http://127.0.0.1:3000/api/models
 
 `models` 中的字符串就是扩图接口 `model` 参数允许使用的值，名称必须完全匹配。
 
-## 5. 图片扩图接口
+## 5. 获取系统资源
+
+### 请求
+
+```http
+GET /api/system/resources
+```
+
+### curl
+
+```bash
+curl http://127.0.0.1:3000/api/system/resources
+```
+
+### 响应示例
+
+```json
+{
+  "timestamp": "2026-09-04T06:30:00.000Z",
+  "platform": "linux",
+  "arch": "x64",
+  "uptimeSeconds": 86400,
+  "activeJob": false,
+  "memory": {
+    "scope": "container",
+    "totalBytes": 8589934592,
+    "usedBytes": 3221225472,
+    "availableBytes": 5368709120,
+    "usedPercent": 37.5
+  },
+  "cpu": {
+    "scope": "cgroup",
+    "model": "12th Gen Intel(R) Core(TM) i3-1215U",
+    "logicalCores": 8,
+    "capacityCores": 8,
+    "usedPercent": 18.4,
+    "availablePercent": 81.6,
+    "estimatedAvailableCores": 6.53,
+    "loadAverage": [0.42, 0.31, 0.25],
+    "sampleMilliseconds": 250
+  },
+  "disk": {
+    "path": "/app",
+    "totalBytes": 107374182400,
+    "usedBytes": 42949672960,
+    "availableBytes": 64424509440,
+    "usedPercent": 40
+  },
+  "gpu": {
+    "detected": true,
+    "devices": [
+      {
+        "name": "Intel 8086:46b3",
+        "vendor": "Intel",
+        "deviceId": "0x46b3",
+        "driver": "i915",
+        "utilizationPercent": null,
+        "memory": {
+          "type": "shared",
+          "totalBytes": null,
+          "usedBytes": null,
+          "availableBytes": null
+        }
+      }
+    ],
+    "vulkan": {
+      "toolInstalled": true,
+      "available": true,
+      "devices": ["Intel(R) UHD Graphics"]
+    },
+    "note": "Integrated GPUs share system memory, so dedicated free GPU memory is not available."
+  },
+  "process": {
+    "pid": 1234,
+    "uptimeSeconds": 120,
+    "rssBytes": 73400320,
+    "heapUsedBytes": 12582912,
+    "heapTotalBytes": 20971520,
+    "externalBytes": 1835008
+  }
+}
+```
+
+- 所有容量字段均使用字节。
+- 个别系统指标因容器权限无法读取时会返回 `null`，不会导致整个接口失败。
+- `memory.scope` 为 `container` 时，数据按 Docker cgroup 内存上限计算；否则为宿主机资源。
+- `cpu.scope` 为 `cgroup` 时，使用率按当前容器的 CPU 计数和配额计算；否则采样宿主机 CPU。`capacityCores` 会考虑 Docker CPU 配额，`availablePercent` 和 `estimatedAvailableCores` 是瞬时估算值。
+- NVIDIA GPU 在可使用 `nvidia-smi` 时会返回显存和利用率。Intel 等共享内存核显无法可靠区分独立显存，因此相关字段返回 `null`。
+- `gpu.vulkan.available` 依赖运行环境中安装 `vulkaninfo`。若未安装 `vulkan-tools`，`toolInstalled` 为 `false`，不代表 GPU 一定不支持 Vulkan。
+
+## 6. 图片扩图接口
 
 ### 请求
 
@@ -213,7 +304,7 @@ with open("output.png", "wb") as output_file:
     output_file.write(response.content)
 ```
 
-## 6. 错误响应
+## 7. 错误响应
 
 错误时返回 JSON：
 
@@ -234,7 +325,7 @@ with open("output.png", "wb") as output_file:
 
 请求方应先检查 HTTP 状态码，再决定按 JSON 还是图片读取响应体。
 
-## 7. 模型选择说明
+## 8. 模型选择说明
 
 下面的用途说明对应当前项目内置模型。对接时应使用“模型 ID”，而不是界面显示名称。
 
@@ -258,7 +349,7 @@ with open("output.png", "wb") as output_file:
 
 模型效果会受到原图分辨率、压缩噪声、模糊程度和目标尺寸影响。扩图模型主要用于放大和重建细节，不能保证修复严重失焦、运动模糊或原图完全缺失的内容。
 
-## 8. 部署注意事项
+## 9. 部署注意事项
 
 ### Node.js
 

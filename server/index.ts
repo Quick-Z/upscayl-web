@@ -4,6 +4,7 @@ import { promises as fs } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { MODELS } from "../common/models-list";
+import { getSystemResources } from "./system-resources";
 
 const host = process.env.API_HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.API_PORT || "3000", 10);
@@ -180,6 +181,10 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && url.pathname === "/api/models") {
       json(response, 200, { models: Object.keys(MODELS) });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/system/resources") {
+      json(response, 200, await getSystemResources(projectRoot, activeJob));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/upscale") {
