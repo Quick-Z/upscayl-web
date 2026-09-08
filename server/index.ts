@@ -1,8 +1,9 @@
 import { createServer, IncomingMessage, ServerResponse } from "http";
-import { spawn } from "child_process";
-import { promises as fs } from "fs";
+import { createWriteStream, promises as fs, createReadStream } from "fs";
+import { spawn, ChildProcess } from "child_process";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
+import { randomUUID } from "crypto";
 import { MODELS } from "../common/models-list";
 import { getSystemResources } from "./system-resources";
 
@@ -10,206 +11,51 @@ const host = process.env.API_HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.API_PORT || "3000", 10);
 const maxBodyBytes = 50 * 1024 * 1024;
 const requestTimeoutMs = 10 * 60 * 1000;
-let activeJob = false;
-
-type OutputFormat = "png" | "jpg" | "webp";
-
+const maxQueueSize = Math.max(1, Number.parseInt(process.env.API_MAX_QUEUE || "100", 10));
+const concurrency = Math.max(1, Number.parseInt(process.env.API_CONCURRENCY || "1", 10));
 const projectRoot = resolve(__dirname, "../..");
+type Format = "png" | "jpg" | "webp";
+type Status = "queued" | "running" | "succeeded" | "failed" | "canceled";
+type Stage = "queued" | "upscaling" | "encoding" | "completed" | "failed" | "canceled";
+interface Job { id: string; status: Status; stage: Stage; progress: number; createdAt: string; startedAt?: string; finishedAt?: string; config: Record<string, string | number | boolean>; input: { filename: string; size: number; mime: string; path: string }; output?: { path: string; url: string; filename: string; mime: string; size: number; expiresAt: string }; error?: { code: string; message: string; retryable: boolean }; dir: string; child?: ChildProcess; cancelRequested?: boolean; subscribers: Set<ServerResponse>; }
+const jobs = new Map<string, Job>();
+const queue: string[] = [];
+let running = 0;
+let shuttingDown = false;
 
-function getPlatformPaths() {
-  if (process.platform === "darwin") {
-    return {
-      executable: join(projectRoot, "resources", "mac", "bin", "upscayl-bin"),
-      models: join(projectRoot, "resources", "models"),
-    };
-  }
-  if (process.platform === "linux") {
-    return {
-      executable: join(projectRoot, "resources", "linux", "bin", "upscayl-bin"),
-      models: join(projectRoot, "resources", "models"),
-    };
-  }
-  if (process.platform === "win32") {
-    return {
-      executable: join(projectRoot, "resources", "win", "bin", "upscayl-bin.exe"),
-      models: join(projectRoot, "resources", "models"),
-    };
-  }
-  throw new Error(`Unsupported platform: ${process.platform}`);
-}
-
-function json(response: ServerResponse, status: number, value: unknown) {
-  const body = JSON.stringify(value);
-  response.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Content-Length": Buffer.byteLength(body),
-    "Access-Control-Allow-Origin": "*",
-  });
-  response.end(body);
-}
-
-function contentType(format: OutputFormat) {
-  return format === "jpg" ? "image/jpeg" : `image/${format}`;
-}
-
-function parseFormat(value: string | null): OutputFormat {
-  const format = (value || "png").toLowerCase().replace("jpeg", "jpg");
-  if (format !== "png" && format !== "jpg" && format !== "webp") {
-    throw new Error("format must be png, jpg, or webp");
-  }
-  return format;
-}
-
-function parseScale(value: string | null) {
-  const scale = value || "4";
-  if (!/^[234]$/.test(scale)) {
-    throw new Error("scale must be 2, 3, or 4");
-  }
-  return scale;
-}
-
-function parseNonNegativeInt(value: string | null, name: string) {
-  const parsed = Number.parseInt(value || "0", 10);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`${name} must be a non-negative integer`);
-  }
-  return parsed;
-}
-
-async function readBody(request: IncomingMessage) {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buffer.length;
-    if (size > maxBodyBytes) {
-      throw new Error(`request body exceeds ${maxBodyBytes} bytes`);
-    }
-    chunks.push(buffer);
-  }
-  if (size === 0) throw new Error("request body is empty");
-  return Buffer.concat(chunks);
-}
-
-function runUpscale(args: string[]) {
-  const { executable } = getPlatformPaths();
-  return new Promise<void>((resolveProcess, reject) => {
-    const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("upscale timed out"));
-    }, requestTimeoutMs);
-    child.once("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.once("close", (code) => {
-      clearTimeout(timeout);
-      if (code === 0) resolveProcess();
-      else reject(new Error(stderr.trim() || `upscayl-bin exited with code ${code}`));
-    });
-  });
-}
-
-async function handleUpscale(request: IncomingMessage, response: ServerResponse, url: URL) {
-  if (activeJob) {
-    json(response, 429, { error: "another upscale job is currently running" });
-    return;
-  }
-  activeJob = true;
-  let jobDir: string | undefined;
-
-  try {
-    jobDir = await fs.mkdtemp(join(tmpdir(), "upscayl-api-"));
-    const inputPath = join(jobDir, "input");
-    const format = parseFormat(url.searchParams.get("format"));
-    const model = url.searchParams.get("model") || "upscayl-standard-4x";
-    const scale = parseScale(url.searchParams.get("scale"));
-    const tileSize = parseNonNegativeInt(url.searchParams.get("tileSize"), "tileSize");
-    const compression = parseNonNegativeInt(url.searchParams.get("compression"), "compression");
-    const gpuId = url.searchParams.get("gpuId") || "";
-    if (!(model in MODELS)) throw new Error(`unknown model: ${model}`);
-    const body = await readBody(request);
-    const outputPath = join(jobDir, `output.${format}`);
-    const { models } = getPlatformPaths();
-    await fs.writeFile(inputPath, body);
-    const args = [
-      "-i", inputPath,
-      "-o", outputPath,
-      "-m", models,
-      "-n", model,
-      "-s", scale,
-      "-f", format,
-      "-c", compression.toString(),
-    ];
-    if (tileSize > 0) args.push("-t", tileSize.toString());
-    if (gpuId) args.push("-g", gpuId);
-    if (url.searchParams.get("tta") === "true") args.push("-x");
-    await runUpscale(args);
-    const output = await fs.readFile(outputPath);
-    response.writeHead(200, {
-      "Content-Type": contentType(format),
-      "Content-Length": output.length,
-      "Content-Disposition": `inline; filename="upscaled.${format}"`,
-      "Access-Control-Allow-Origin": "*",
-    });
-    response.end(output);
-  } finally {
-    activeJob = false;
-    if (jobDir) await fs.rm(jobDir, { recursive: true, force: true });
+async function cleanupExpired() {
+  const now = Date.now();
+  for (const [id, job] of jobs) {
+    if (!job.finishedAt) continue;
+    const expiresAt = job.output?.expiresAt ? Date.parse(job.output.expiresAt) : Date.parse(job.finishedAt) + 1800000;
+    if (expiresAt > now) continue;
+    if (job.subscribers.size) continue;
+    await fs.rm(job.dir, { recursive: true, force: true }).catch(() => undefined);
+    jobs.delete(id);
   }
 }
 
-const server = createServer(async (request, response) => {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (request.method === "OPTIONS") {
-    response.writeHead(204);
-    response.end();
-    return;
-  }
-  const url = new URL(request.url || "/", `http://${request.headers.host || `${host}:${port}`}`);
-  try {
-    if (request.method === "GET" && url.pathname === "/health") {
-      json(response, 200, { status: "ok", activeJob });
-      return;
-    }
-    if (request.method === "GET" && url.pathname === "/api/models") {
-      json(response, 200, { models: Object.keys(MODELS) });
-      return;
-    }
-    if (request.method === "GET" && url.pathname === "/api/system/resources") {
-      json(response, 200, await getSystemResources(projectRoot, activeJob));
-      return;
-    }
-    if (request.method === "POST" && url.pathname === "/api/upscale") {
-      await handleUpscale(request, response, url);
-      return;
-    }
-    json(response, 404, { error: "not found" });
-  } catch (error) {
-    if (!response.headersSent) {
-      json(response, 400, { error: error instanceof Error ? error.message : String(error) });
-    } else {
-      response.destroy();
-    }
-  }
-});
-
-server.on("error", (error) => {
-  console.error("Upscayl API server error:", error);
-  process.exitCode = 1;
-});
-
-server.listen(port, host, () => {
-  console.log(`Upscayl API listening on http://${host}:${port}`);
-  console.log(`POST /api/upscale?model=upscayl-standard-4x&scale=4&format=png`);
-});
-
-process.on("SIGINT", () => server.close(() => process.exit(0)));
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
+function paths() { if (process.platform === "darwin") return { executable: join(projectRoot, "resources/mac/bin/upscayl-bin"), models: join(projectRoot, "resources/models") }; if (process.platform === "linux") return { executable: join(projectRoot, "resources/linux/bin/upscayl-bin"), models: join(projectRoot, "resources/models") }; if (process.platform === "win32") return { executable: join(projectRoot, "resources/win/bin/upscayl-bin.exe"), models: join(projectRoot, "resources/models") }; throw new Error(`Unsupported platform: ${process.platform}`); }
+function json(res: ServerResponse, status: number, value: unknown, extra: Record<string, string> = {}) { const body = JSON.stringify(value); res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body).toString(), "Access-Control-Allow-Origin": "*", ...extra }); res.end(body); }
+function fail(res: ServerResponse, status: number, code: string, message: string, retryable = false) { json(res, status, { error: { code, message, retryable } }); }
+function mimeFor(format: Format) { return format === "jpg" ? "image/jpeg" : `image/${format}`; }
+function parseFormat(v: string | null): Format { const f = (v || "png").toLowerCase().replace("jpeg", "jpg"); if (!["png", "jpg", "webp"].includes(f)) throw new Error("format must be png, jpg, or webp"); return f as Format; }
+function parseScale(v: string | null) { const s = v || "4"; if (!/^[234]$/.test(s)) throw new Error("scale must be 2, 3, or 4"); return s; }
+function nonNegative(v: string | null, name: string) { const n = Number.parseInt(v || "0", 10); if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer`); return n; }
+function filename(v: string | undefined, mime: string) { const fallback = mime === "image/jpeg" ? "image.jpg" : mime === "image/webp" ? "image.webp" : "image.png"; return ((v || fallback).replace(/[\\/\0]/g, "_").trim() || fallback).slice(0, 255); }
+async function streamBody(req: IncomingMessage, target: string) { return new Promise<number>((resolveBody, reject) => { let size = 0; const out = createWriteStream(target, { flags: "wx" }); const rejectOnce = (e: Error) => { out.destroy(); reject(e); }; req.on("data", (chunk: Buffer) => { size += chunk.length; if (size > maxBodyBytes) { req.destroy(); rejectOnce(new Error("request body exceeds 50 MB")); return; } out.write(chunk); }); req.on("end", () => out.end(() => size ? resolveBody(size) : rejectOnce(new Error("request body is empty")))); req.on("aborted", () => rejectOnce(new Error("upload aborted"))); req.on("error", rejectOnce); }); }
+function view(job: Job) { return { id: job.id, status: job.status, stage: job.stage, progress: job.progress, position: job.status === "queued" ? queue.indexOf(job.id) + 1 : null, createdAt: job.createdAt, startedAt: job.startedAt || null, finishedAt: job.finishedAt || null, config: job.config, input: { filename: job.input.filename, size: job.input.size, mime: job.input.mime }, output: job.output ? { url: job.output.url, filename: job.output.filename, mime: job.output.mime, size: job.output.size, expiresAt: job.output.expiresAt } : null, error: job.error || null }; }
+function publish(job: Job) { const data = `event: job\ndata: ${JSON.stringify({ job: view(job) })}\n\n`; for (const res of job.subscribers) try { res.write(data); } catch { job.subscribers.delete(res); } }
+function run(job: Job, args: string[]) { const { executable } = paths(); return new Promise<void>((resolveRun, rejectRun) => { const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"] }); job.child = child; let stderr = ""; child.stderr?.on("data", d => { stderr += d.toString(); }); const timeout = setTimeout(() => { child.kill("SIGKILL"); rejectRun(Object.assign(new Error("upscale timed out"), { code: "TIMEOUT" })); }, requestTimeoutMs); child.once("error", e => { clearTimeout(timeout); rejectRun(e); }); child.once("close", code => { clearTimeout(timeout); code === 0 ? resolveRun() : rejectRun(new Error(stderr.trim() || `upscayl-bin exited with code ${code}`)); }); }); }
+async function execute(job: Job) { running++; job.status = "running"; job.stage = "upscaling"; job.progress = 10; job.startedAt = new Date().toISOString(); publish(job); const format = job.config.format as Format; const outputPath = join(job.dir, `output.${format}`); const p = paths(); const args = ["-i", job.input.path, "-o", outputPath, "-m", p.models, "-n", String(job.config.model), "-s", String(job.config.scale), "-f", format, "-c", String(job.config.compression)]; if (Number(job.config.tileSize) > 0) args.push("-t", String(job.config.tileSize)); if (job.config.gpuId) args.push("-g", String(job.config.gpuId)); if (job.config.tta === true) args.push("-x"); try { await run(job, args); if (job.cancelRequested) throw Object.assign(new Error("job canceled"), { code: "CANCELED" }); job.stage = "encoding"; job.progress = 95; publish(job); const stat = await fs.stat(outputPath); const outName = `${job.input.filename.replace(/\.[^.]+$/, "")}-upscaled.${format}`; job.output = { path: outputPath, url: `/api/jobs/${job.id}/result`, filename: outName, mime: mimeFor(format), size: stat.size, expiresAt: new Date(Date.now() + 1800000).toISOString() }; job.status = "succeeded"; job.stage = "completed"; job.progress = 100; } catch (e) { if (job.cancelRequested || (e as { code?: string }).code === "CANCELED") { job.status = "canceled"; job.stage = "canceled"; } else { job.status = "failed"; job.stage = "failed"; job.error = { code: (e as { code?: string }).code || "UPSCALE_FAILED", message: e instanceof Error ? e.message : String(e), retryable: true }; } } finally { job.finishedAt = new Date().toISOString(); job.child = undefined; running--; publish(job); pump(); } }
+function pump() { while (!shuttingDown && running < concurrency && queue.length) { const id = queue.shift()!; const job = jobs.get(id); if (job?.status === "queued") void execute(job); } }
+function getJob(id: string, res: ServerResponse) { const job = jobs.get(id); if (!job) { fail(res, 404, "JOB_NOT_FOUND", "Job not found"); return; } return job; }
+async function createJob(req: IncomingMessage, res: ServerResponse, url: URL) { if (shuttingDown) return fail(res, 503, "SHUTTING_DOWN", "Server is shutting down", true); if (queue.length + running >= maxQueueSize) return fail(res, 429, "QUEUE_FULL", "The processing queue is full", true); const mime = String(req.headers["content-type"] || "").split(";")[0].toLowerCase(); if (!["image/png", "image/jpeg", "image/webp"].includes(mime)) return fail(res, 415, "UNSUPPORTED_MEDIA_TYPE", "Only PNG, JPEG, and WEBP images are supported"); let dir: string | undefined; try { const model = url.searchParams.get("model") || "upscayl-standard-4x"; if (!(model in MODELS)) throw new Error(`Unknown model: ${model}`); const config = { model, scale: parseScale(url.searchParams.get("scale")), format: parseFormat(url.searchParams.get("format")), tileSize: nonNegative(url.searchParams.get("tileSize"), "tileSize"), compression: nonNegative(url.searchParams.get("compression"), "compression"), gpuId: url.searchParams.get("gpuId") || "", tta: url.searchParams.get("tta") === "true" }; const id = randomUUID(); dir = await fs.mkdtemp(join(tmpdir(), `upscayl-job-${id}-`)); const inputPath = join(dir, "input"); await streamBody(req, inputPath); const stat = await fs.stat(inputPath); const job: Job = { id, status: "queued", stage: "queued", progress: 0, createdAt: new Date().toISOString(), config, input: { filename: filename(req.headers["x-file-name"] as string | undefined, mime), size: stat.size, mime, path: inputPath }, dir, subscribers: new Set() }; jobs.set(id, job); queue.push(id); publish(job); pump(); return json(res, 202, { job: view(job) }); } catch (e) { if (dir) await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined); const message = e instanceof Error ? e.message : String(e); return fail(res, message.includes("50 MB") ? 413 : 422, message.includes("50 MB") ? "PAYLOAD_TOO_LARGE" : "INVALID_JOB", message); } }
+function events(req: IncomingMessage, res: ServerResponse, job: Job) { res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "Access-Control-Allow-Origin": "*" }); res.write(`event: job\ndata: ${JSON.stringify({ job: view(job) })}\n\n`); job.subscribers.add(res); const timer = setInterval(() => { try { res.write(": heartbeat\n\n"); } catch { clearInterval(timer); } }, 15000); req.on("close", () => { clearInterval(timer); job.subscribers.delete(res); }); if (["succeeded", "failed", "canceled"].includes(job.status)) { clearInterval(timer); job.subscribers.delete(res); res.end(); } }
+async function result(res: ServerResponse, job: Job) { if (job.status !== "succeeded" || !job.output) return fail(res, 409, "RESULT_NOT_READY", "Result is not ready", true); try { const stat = await fs.stat(job.output.path); res.writeHead(200, { "Content-Type": job.output.mime, "Content-Length": stat.size.toString(), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(job.output.filename)}`, "Access-Control-Allow-Origin": "*" }); createReadStream(job.output.path).pipe(res); } catch { fail(res, 410, "RESULT_EXPIRED", "Result is no longer available"); } }
+function cancel(res: ServerResponse, job: Job) { if (["succeeded", "failed", "canceled"].includes(job.status)) return json(res, 200, { job: view(job) }); job.cancelRequested = true; if (job.status === "queued") { const i = queue.indexOf(job.id); if (i >= 0) queue.splice(i, 1); job.status = "canceled"; job.stage = "canceled"; job.finishedAt = new Date().toISOString(); publish(job); } else job.child?.kill("SIGTERM"); json(res, 202, { job: view(job) }); }
+const server = createServer(async (req, res) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS"); res.setHeader("Access-Control-Allow-Headers", "Content-Type,X-File-Name,Idempotency-Key"); if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; } const url = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`); const match = url.pathname.match(/^\/api\/jobs\/([^/]+)(?:\/(events|result))?$/); try { if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { status: "ok", queueDepth: queue.length, running, concurrency, capacity: maxQueueSize }); if (req.method === "GET" && url.pathname === "/api/models") return json(res, 200, { models: Object.keys(MODELS) }); if (req.method === "GET" && url.pathname === "/api/system/resources") return json(res, 200, { ...(await getSystemResources(projectRoot, running > 0)), queueDepth: queue.length, running, concurrency }); if (req.method === "POST" && url.pathname === "/api/jobs") return createJob(req, res, url); if (match) { const job = getJob(match[1], res); if (!job) return; if (req.method === "GET" && match[2] === "events") return events(req, res, job); if (req.method === "GET" && match[2] === "result") return result(res, job); if (req.method === "GET" && !match[2]) return json(res, 200, { job: view(job) }); if (req.method === "DELETE" && !match[2]) return cancel(res, job); } return fail(res, 404, "NOT_FOUND", "Route not found"); } catch (e) { if (!res.headersSent) fail(res, 400, "BAD_REQUEST", e instanceof Error ? e.message : String(e)); else res.destroy(); } });
+async function shutdown() { shuttingDown = true; for (const job of jobs.values()) if (job.status === "running") { job.cancelRequested = true; job.child?.kill("SIGTERM"); } server.close(() => process.exit(0)); }
+server.listen(port, host, () => console.log(`Upscayl API listening on http://${host}:${port}`)); process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
+const cleanupTimer = setInterval(() => { void cleanupExpired(); }, 60000);
+cleanupTimer.unref();

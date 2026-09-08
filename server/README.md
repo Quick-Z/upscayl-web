@@ -17,14 +17,14 @@ curl http://127.0.0.1:3000/health
 curl http://127.0.0.1:3000/api/models
 ```
 
-Send the image as the raw request body. The result is returned as an image:
+Submit the image as the raw request body. The API returns a queued job immediately:
 
 ```bash
 curl -X POST \
-  'http://127.0.0.1:3000/api/upscale?model=upscayl-standard-4x&scale=4&format=png' \
+  'http://127.0.0.1:3000/api/jobs?model=upscayl-standard-4x&scale=4&format=png' \
   -H 'Content-Type: image/png' \
-  --data-binary '@input.png' \
-  --output output.png
+  -H 'X-File-Name: input.png' \
+  --data-binary '@input.png'
 ```
 
-Supported query parameters are `model`, `scale` (`2`, `3`, or `4`), `format` (`png`, `jpg`, or `webp`), `tileSize`, `compression`, `gpuId`, and `tta=true`.
+Use the returned `job.id` with `GET /api/jobs/:id`, `GET /api/jobs/:id/events` (SSE), and `GET /api/jobs/:id/result`. Supported query parameters are `model`, `scale` (`2`, `3`, or `4`), `format` (`png`, `jpg`, or `webp`), `tileSize`, `compression`, `gpuId`, and `tta=true`.
