@@ -3,166 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#111613" />
+    <meta name="theme-color" content="#020617" />
     <title>Upscayl API · 图片升图工作台</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell">
-      <header class="topbar">
-        <a class="brand" href="./index.html" aria-label="Upscayl API 首页">
-          <span class="brand-mark">U</span>
-          <span>
-            <strong>UPSCAYL</strong>
-            <small>API WORKBENCH</small>
-          </span>
-        </a>
-        <div class="connection-pill" id="connectionPill" data-state="idle">
-          <span class="status-dot"></span>
-          <span id="connectionText">未连接</span>
+      <aside class="sidebar" aria-label="升图设置">
+        <header class="sidebar-header"><a class="brand" href="./index.html" aria-label="Upscayl API 首页"><span class="brand-mark">U</span><span><strong>UPSCAYL</strong><small>API WORKBENCH</small></span></a><div class="connection-pill" id="connectionPill" data-state="idle"><span class="status-dot"></span><span id="connectionText">未连接</span></div></header>
+        <nav class="tabs" aria-label="工作区导航"><button class="tab is-active" type="button">升图</button><button class="tab" id="settingsTab" type="button">设置</button></nav>
+        <div class="sidebar-scroll" id="upscaleSettings">
+          <section class="step-block"><div class="step-heading"><span class="step-label">01</span><div><strong>选择图片</strong><small>最多 10 张，按顺序处理</small></div><span class="queue-count" id="queueCount">0 / 10</span></div><label class="dropzone" id="dropzone" for="fileInput" tabindex="0"><input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple /><span class="upload-symbol" aria-hidden="true">↥</span><strong>拖入图片，或点击选择</strong><span>PNG · JPG · WEBP · 单张不超过 50 MB</span></label><div class="queue" id="fileQueue" aria-live="polite"></div><button class="text-button clear-queue" id="clearFile" type="button" hidden>清空队列</button></section>
+          <section class="step-block"><div class="step-heading"><span class="step-label">02</span><div><strong>模型与倍率</strong><small>为整批图片使用同一配置</small></div></div><div class="field field-wide"><span>AI 模型</span><button class="model-trigger" id="modelTrigger" type="button"><span id="modelTriggerName">Upscayl 标准 · upscayl-standard-4x</span><span aria-hidden="true">⌄</span></button><select id="modelSelect" aria-hidden="true"></select><small id="modelDescription">—</small><div class="model-preview" id="modelPreview"><img id="modelBeforePreview" alt="模型处理前示例" /><img id="modelAfterPreview" alt="模型处理后示例" /><span>BEFORE</span><span>AFTER</span></div></div><div class="form-grid"><label class="field"><span>放大倍数</span><select id="scaleSelect"><option value="2">2×</option><option value="3">3×</option><option value="4" selected>4×</option></select></label><label class="field"><span>输出格式</span><select id="formatSelect"><option value="png" selected>PNG</option><option value="jpg">JPG</option><option value="webp">WEBP</option></select></label><label class="field"><span>Tile size <small>可选</small></span><select id="tileSelect"><option value="0" selected>自动</option><option value="32">32 · 低显存</option><option value="64">64 · 平衡</option><option value="128">128 · 更快</option></select></label><label class="field"><span>GPU ID <small>可选</small></span><input id="gpuInput" type="text" inputmode="numeric" placeholder="auto" autocomplete="off" /></label></div><label class="toggle-row"><input id="ttaToggle" type="checkbox" /><span class="toggle-track"><span></span></span><span><strong>启用 TTA</strong><small>可能提升细节，但处理更慢</small></span></label></section>
+          <section class="step-block action-block"><div class="step-heading"><span class="step-label">03</span><div><strong>开始升图</strong><small id="progressText">选择图片后开始</small></div></div><button class="primary-button" id="upscaleButton" type="button"><span>开始升图</span><span aria-hidden="true">→</span></button><button class="secondary-button" id="healthButton" type="button">检查 API 连接</button><p class="error-message" id="errorMessage" role="alert" hidden></p></section>
         </div>
-      </header>
-
-      <main class="main-grid">
-        <section class="intro-panel">
-          <p class="kicker">IMAGE UPSCALING / HTTP</p>
-          <h1>让每一张图，<em>清晰地</em>变大。</h1>
-          <p class="intro-copy">
-            直接连接本地 Upscayl API。上传原图，选择模型与输出规格，几秒后拿到可下载的结果。
-          </p>
-          <div class="intro-meta">
-            <span>Vulkan powered</span>
-            <span>PNG · JPG · WEBP</span>
-            <span>50 MB / request</span>
-          </div>
-        </section>
-
-        <section class="workspace-card" aria-label="图片升图工作区">
-          <div class="section-heading">
-            <div>
-              <span class="step-label">01 / INPUT</span>
-              <h2>放入一张图片</h2>
-            </div>
-            <span class="file-hint">PNG, JPG, WEBP</span>
-          </div>
-
-          <label class="dropzone" id="dropzone" for="fileInput" tabindex="0">
-            <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" />
-            <div class="dropzone-copy" id="dropzoneCopy">
-              <span class="upload-symbol" aria-hidden="true">↥</span>
-              <strong>拖入图片，或点击选择</strong>
-              <span>图片会以二进制直接发送到 Upscayl API</span>
-            </div>
-            <img class="input-preview" id="inputPreview" alt="待处理图片预览" />
-          </label>
-          <div class="file-row" id="fileRow" hidden>
-            <div>
-              <strong id="fileName">—</strong>
-              <span id="fileSize">—</span>
-            </div>
-            <button class="text-button" id="clearFile" type="button">移除</button>
-          </div>
-
-          <div class="section-heading settings-heading">
-            <div>
-              <span class="step-label">02 / SETTINGS</span>
-              <h2>告诉它怎么处理</h2>
-            </div>
-            <span class="api-badge">POST /api/upscale</span>
-          </div>
-
-          <div class="form-grid">
-            <label class="field field-wide">
-              <span>AI 模型</span>
-              <select id="modelSelect"></select>
-              <small id="modelDescription">—</small>
-            </label>
-            <label class="field">
-              <span>放大倍数</span>
-              <select id="scaleSelect">
-                <option value="2">2×</option>
-                <option value="3">3×</option>
-                <option value="4" selected>4×</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>输出格式</span>
-              <select id="formatSelect">
-                <option value="png" selected>PNG</option>
-                <option value="jpg">JPG</option>
-                <option value="webp">WEBP</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Tile size <small>可选</small></span>
-              <select id="tileSelect">
-                <option value="0" selected>自动</option>
-                <option value="32">32 · 低显存</option>
-                <option value="64">64 · 平衡</option>
-                <option value="128">128 · 更快</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>GPU ID <small>可选</small></span>
-              <input id="gpuInput" type="text" inputmode="numeric" placeholder="auto" autocomplete="off" />
-            </label>
-          </div>
-
-          <label class="toggle-row">
-            <input id="ttaToggle" type="checkbox" />
-            <span class="toggle-track"><span></span></span>
-            <span><strong>启用 TTA</strong><small>可能提升细节，但处理更慢</small></span>
-          </label>
-
-          <div class="action-row">
-            <button class="primary-button" id="upscaleButton" type="button">
-              <span>开始升图</span>
-              <span aria-hidden="true">→</span>
-            </button>
-            <button class="secondary-button" id="healthButton" type="button">检查 API 连接</button>
-          </div>
-          <p class="error-message" id="errorMessage" role="alert" hidden></p>
-        </section>
-
-        <section class="result-panel" id="resultPanel" aria-live="polite">
-          <div class="section-heading result-heading">
-            <div>
-              <span class="step-label">03 / OUTPUT</span>
-              <h2>结果会出现在这里</h2>
-            </div>
-            <span class="result-status" id="resultStatus">等待图片</span>
-          </div>
-          <div class="result-stage" id="resultStage">
-            <div class="empty-result" id="emptyResult">
-              <span class="crosshair" aria-hidden="true"></span>
-              <strong>还没有结果</strong>
-              <span>选择一张图片并开始处理</span>
-            </div>
-            <div class="loading-result" id="loadingResult" hidden>
-              <div class="loading-line"></div>
-              <strong>正在重建细节</strong>
-              <span>模型正在通过本机 GPU 处理图片</span>
-            </div>
-            <img class="output-preview" id="outputPreview" alt="扩图结果预览" />
-          </div>
-          <div class="result-footer" id="resultFooter" hidden>
-            <div>
-              <span id="outputInfo">—</span>
-              <strong id="outputName">upscaled.png</strong>
-            </div>
-            <a class="download-button" id="downloadButton" download="upscaled.png">下载结果 <span>↓</span></a>
-          </div>
-        </section>
-      </main>
-
-      <footer class="footer">
-        <label class="endpoint-field">
-          <span>API endpoint</span>
-          <input id="apiBaseInput" type="url" value="http://127.0.0.1:3000" spellcheck="false" />
-        </label>
-        <p>图片不会上传到第三方服务 · 当前服务默认一次处理一个任务</p>
-      </footer>
+        <div class="settings-panel" id="settingsPanel" hidden><label class="field"><span>API endpoint</span><input id="apiBaseInput" type="url" value="http://127.0.0.1:3000" spellcheck="false" /></label><p>图片仅发送到你配置的 Upscayl API，不会上传到第三方服务。</p></div>
+        <footer class="sidebar-footer"><span>Upscayl API</span><span>串行队列 · 最多 10 张</span></footer>
+      </aside>
+      <main class="canvas" aria-label="图片预览与结果"><div class="canvas-topline"><span class="canvas-kicker">IMAGE UPSCALING / HTTP</span><span class="canvas-status" id="resultStatus">等待图片</span></div><div class="canvas-stage" id="resultStage"><div class="empty-result" id="emptyResult"><span class="crosshair" aria-hidden="true"></span><strong>选择图片开始</strong><span>右侧会在同一画布中显示原图与升图结果</span></div><div class="loading-result" id="loadingResult" hidden><div class="loading-line"></div><strong id="loadingTitle">正在重建细节</strong><span id="loadingCopy">按队列顺序处理图片</span></div><div class="comparison" id="comparison" hidden><div class="image-pane"><span>原图</span><img id="inputPreview" alt="原图预览" /></div><div class="image-pane output-pane"><span>升图结果</span><img id="outputPreview" alt="升图结果预览" /></div></div></div><div class="canvas-footer" id="resultFooter" hidden><div><span id="outputInfo">—</span><strong id="outputName">upscaled.png</strong></div><a class="download-button" id="downloadButton" download="upscaled.png">下载当前结果 <span>↓</span></a></div></main>
     </div>
+    <div class="model-dialog" id="modelDialog" hidden><div class="model-dialog-backdrop" data-close-model-dialog></div><section class="model-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="modelDialogTitle"><header><div><span class="dialog-kicker">SELECT MODEL</span><h2 id="modelDialogTitle">选择 AI 模型</h2><p>每个模型都有不同的锐化和细节还原倾向。</p></div><button class="dialog-close" type="button" aria-label="关闭模型选择" data-close-model-dialog>×</button></header><div class="model-grid" id="modelGrid"></div></section></div>
     <script src="./app.js"></script>
   </body>
 </html>
