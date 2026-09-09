@@ -5,7 +5,7 @@
 Start the local API server with:
 
 ```bash
-npm run api
+npm start
 ```
 
 The server listens on `127.0.0.1:3000` by default. Set `API_HOST` and `API_PORT` to change the bind address and port.

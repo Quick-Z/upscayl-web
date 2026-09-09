@@ -11,14 +11,9 @@ out/
 # testing
 /coverage
 
-# next.js
-/renderer/.next/
-/renderer/out/
-
 # production
 /dist/
-/export/electron
-/export/common
+/export/
 
 # misc
 .DS_Store

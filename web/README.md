@@ -4,22 +4,16 @@
 
 ## 启动
 
-先在项目根目录启动 API：
+在项目根目录执行一次：
 
 ```bash
-npm run api
-```
-
-然后使用项目自带的 Node.js 静态服务器打开 `web/` 目录：
-
-```bash
-npm run web
+npm start
 ```
 
 也可以通过环境变量修改网页服务监听地址和端口：
 
 ```bash
-WEB_HOST=0.0.0.0 WEB_PORT=8080 npm run web
+API_HOST=0.0.0.0 API_PORT=3000 WEB_HOST=0.0.0.0 WEB_PORT=8080 npm start
 ```
 
 浏览器访问：
