@@ -1,4 +1,4 @@
-# Upscayl HTTP API 对接文档
+# enhance HTTP API 对接文档
 
 ## 1. 服务地址
 
@@ -185,7 +185,9 @@ GET https://pscayl.yijian.dpdns.org/api/jobs/{jobId}/result
 | `Content-Disposition` | string | 是 | 包含建议下载文件名 |
 | 响应体 | binary | 是 | 输出图片原始二进制 |
 
-结果默认保留 30 分钟。
+结果及输入文件默认保留 24 小时，可通过环境变量 `IMAGE_RETENTION_HOURS` 配置。
+
+批量上传时，为每张图片请求增加 `X-Queue-Batch-Id`、`X-Queue-Batch-Size`、`X-Queue-Batch-Index` 三个请求头。服务端会按批次索引保持连续的全局 FIFO 顺序，避免其他用户任务插入批次中间。
 
 ## 8. 其他接口
 

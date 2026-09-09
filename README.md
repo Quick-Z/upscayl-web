@@ -1,13 +1,13 @@
-# Upscayl Web
+# enhance Web
 
-Upscayl is now a Web-only image-upscaling project. The static browser client in
+enhance is now a Web-only image-upscaling project. The static browser client in
 `web/` sends jobs to the local HTTP API in `server/`, which runs the bundled
-Upscayl inference binary and models.
+enhance inference binary and models.
 
 ## Requirements
 
 - Node.js 18.20.5 or newer
-- A Vulkan-capable GPU supported by the bundled Upscayl binary
+- A Vulkan-capable GPU supported by the bundled enhance binary
 
 ## Run locally
 

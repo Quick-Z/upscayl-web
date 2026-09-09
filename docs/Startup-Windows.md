@@ -2,7 +2,7 @@
 
 本项目当前由两个前台进程组成：
 
-1. Upscayl 项目：提供 Web 页面和图片处理 API。
+1. enhance 项目：提供 Web 页面和图片处理 API。
 2. Cloudflare Tunnel：把公网域名转发到本机服务。
 
 电脑重启后，这两个进程都需要重新启动。当前没有安装为 Windows 服务，因此关闭对应终端窗口后，进程也会停止，外部设备将无法访问。
@@ -35,7 +35,7 @@ C:\Users\Admin\.cloudflared\config.yml
 https://pscayl.yijian.dpdns.org
 ```
 
-## 2. 启动 Upscayl 项目
+## 2. 启动 enhance 项目
 
 打开第一个 PowerShell 或 CMD 窗口，执行：
 
@@ -47,8 +47,8 @@ npm run dev
 看到类似以下输出，表示项目服务已启动：
 
 ```text
-Upscayl API listening on http://127.0.0.1:3000
-Upscayl web UI listening on http://127.0.0.1:5173
+enhance API listening on http://127.0.0.1:3000
+enhance web UI listening on http://127.0.0.1:5173
 ```
 
 本机验证：
@@ -184,8 +184,8 @@ https://pscayl.yijian.dpdns.org
 检查第一个终端是否仍显示：
 
 ```text
-Upscayl API listening on http://127.0.0.1:3000
-Upscayl web UI listening on http://127.0.0.1:5173
+enhance API listening on http://127.0.0.1:3000
+enhance web UI listening on http://127.0.0.1:5173
 ```
 
 如果没有，重新运行：
@@ -214,7 +214,7 @@ npm run dev
 
 | 任务 | 程序 | 工作目录 |
 | --- | --- | --- |
-| Upscayl | `npm.cmd run dev` | `D:\upscayl-web` |
+| enhance | `npm.cmd run dev` | `D:\upscayl-web` |
 | Cloudflare Tunnel | `C:\Program Files (x86)\cloudflared\cloudflared.exe` | 任意 |
 
 Cloudflare Tunnel 任务的参数：

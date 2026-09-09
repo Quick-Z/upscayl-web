@@ -81,7 +81,7 @@ server.on("error", (error) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Upscayl web UI listening on http://${host}:${port}`);
+  console.log(`enhance web UI listening on http://${host}:${port}`);
   console.log(`Serving ${webRoot}`);
 });
 

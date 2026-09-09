@@ -1,8 +1,8 @@
 {
-  "name": "upscayl",
+  "name": "enhance",
   "private": true,
   "version": "2.15.0",
-  "description": "Upscayl HTTP API and web workbench",
+  "description": "enhance HTTP API and web workbench",
   "license": "AGPL-3.0",
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('export', { recursive: true, force: true })\"",

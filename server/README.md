@@ -1,4 +1,4 @@
-# Upscayl HTTP API
+# enhance HTTP API
 
 完整的中文对接文档请参阅：[docs/API-Integration.md](../docs/API-Integration.md)。
 

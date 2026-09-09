@@ -26,7 +26,7 @@ Windows 重启后的启动步骤参阅：[Startup-Windows.md](./Startup-Windows.
 
 | 请求部分 | 参数名 | 类型 | 是否必传 | 默认值 | 参数解析 |
 | --- | --- | --- | --- | --- | --- |
-| URL Query | `model` | string | 否 | `enhance-standard-4x` | 必须是 `/api/models` 返回的模型 ID |
+| URL Query | `model` | string | 否 | `upscayl-standard-4x` | 必须是 `/api/models` 返回的模型 ID |
 | URL Query | `scale` | string | 否 | `4` | 只接受 `2`、`3`、`4` |
 | URL Query | `format` | string | 否 | `png` | 只接受 `png`、`jpg`、`webp`；`jpeg` 转为 `jpg` |
 | URL Query | `tileSize` | integer | 否 | `0` | 非负整数；0 为自动 |
@@ -35,6 +35,9 @@ Windows 重启后的启动步骤参阅：[Startup-Windows.md](./Startup-Windows.
 | URL Query | `tta` | string | 否 | `false` | 仅值为 `true` 时启用 |
 | Header | `Content-Type` | MIME string | 是 | 无 | `image/png`、`image/jpeg` 或 `image/webp` |
 | Header | `X-File-Name` | string | 否 | 按 MIME 推断 | 原始文件名；路径分隔符替换为 `_`，最多 255 字符 |
+| Header | `X-Queue-Batch-Id` | string | 否 | 无 | 批量上传时同一批请求使用相同值 |
+| Header | `X-Queue-Batch-Size` | integer | 否 | 无 | 批量总数，与批次 ID 一起使用 |
+| Header | `X-Queue-Batch-Index` | integer | 否 | 无 | 批次内从 0 开始的顺序索引 |
 | Body | 图片内容 | binary | 是 | 无 | 直接发送图片字节，不能为空 |
 
 ## 3. `GET /health` 健康检查
@@ -63,7 +66,7 @@ GET https://enhance.yijian.dpdns.org/health
 GET https://enhance.yijian.dpdns.org/api/models
 ```
 
-无参数。响应：`{ "models": ["enhance-standard-4x", "enhance-lite-4x", "high-fidelity-4x", "remacri-4x", "ultramix-balanced-4x", "ultrasharp-4x", "digital-art-4x"] }`。
+无参数。响应：`{ "models": ["upscayl-standard-4x", "upscayl-lite-4x", "high-fidelity-4x", "remacri-4x", "ultramix-balanced-4x", "ultrasharp-4x", "digital-art-4x"] }`。
 
 | JSON 路径 | 类型 | 是否必有 | 默认/空值 | 参数解析 |
 | --- | --- | --- | --- | --- |
@@ -87,7 +90,7 @@ Query、Header、Body 参数见第 2 节。示例：
 
 ```bash
 curl -X POST \
-  "https://enhance.yijian.dpdns.org/api/jobs?model=enhance-standard-4x&scale=4&format=png" \
+  "https://enhance.yijian.dpdns.org/api/jobs?model=upscayl-standard-4x&scale=4&format=png" \
   -H "Content-Type: image/png" \
   -H "X-File-Name: input.png" \
   --data-binary "@input.png"
@@ -107,7 +110,7 @@ curl -X POST \
 | `job.startedAt` | ISO 8601 string/null | 是 | `null` | 开始时间 |
 | `job.finishedAt` | ISO 8601 string/null | 是 | `null` | 结束时间 |
 | `job.config` | object | 是 | 无 | 服务端解析后的配置 |
-| `job.config.model` | string | 是 | `enhance-standard-4x` | 实际模型 |
+| `job.config.model` | string | 是 | `upscayl-standard-4x` | 实际模型 |
 | `job.config.scale` | string | 是 | `4` | 实际倍率 |
 | `job.config.format` | string | 是 | `png` | 实际输出格式 |
 | `job.config.tileSize` | integer | 是 | `0` | Tile 大小 |
@@ -199,7 +202,9 @@ GET https://enhance.yijian.dpdns.org/api/jobs/{jobId}/result
 | `Content-Disposition` | string | 是 | 建议下载文件名 |
 | Body | binary | 是 | 输出图片原始字节 |
 
-结果默认保留 30 分钟。
+结果及输入文件默认保留 24 小时，可通过环境变量 `IMAGE_RETENTION_HOURS` 配置保留小时数。服务启动时会清理超过保留时间的历史临时目录。
+
+批量上传时，客户端应为每张图片同时发送相同的 `X-Queue-Batch-Id`、`X-Queue-Batch-Size`，并发送不同的 `X-Queue-Batch-Index`。服务端会先为整批预留连续的全局 FIFO 队列位置，待该批所有图片上传完成后按索引入队，其他用户的任务不会插入批次中间。
 
 ## 9. `DELETE /api/jobs/{jobId}` 取消任务
 
@@ -294,7 +299,7 @@ GET https://enhance.yijian.dpdns.org/api/system/resources
 
 ```bash
 curl -s -X POST \
-  "https://enhance.yijian.dpdns.org/api/jobs?model=enhance-standard-4x&scale=4&format=png" \
+  "https://enhance.yijian.dpdns.org/api/jobs?model=upscayl-standard-4x&scale=4&format=png" \
   -H "Content-Type: image/png" \
   -H "X-File-Name: input.png" \
   --data-binary "@input.png" > submit.json
@@ -334,7 +339,7 @@ const file = document.querySelector("input[type=file]").files[0];
 
 // 1. 上传原始图片二进制
 const submitResponse = await fetch(
-  `${API}/api/jobs?model=enhance-standard-4x&scale=4&format=png`,
+  `${API}/api/jobs?model=upscayl-standard-4x&scale=4&format=png`,
   {
     method: "POST",
     headers: { "Content-Type": file.type, "X-File-Name": file.name },
@@ -422,7 +427,7 @@ const file = document.querySelector("input[type=file]").files[0];
 
 // 1. 上传原始图片二进制
 const submitResponse = await fetch(
-  `${API}/api/jobs?model=enhance-standard-4x&scale=4&format=png`,
+  `${API}/api/jobs?model=upscayl-standard-4x&scale=4&format=png`,
   {
     method: "POST",
     headers: { "Content-Type": file.type, "X-File-Name": file.name },
