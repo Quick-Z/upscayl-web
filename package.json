@@ -6,6 +6,7 @@
   "license": "AGPL-3.0",
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('export', { recursive: true, force: true })\"",
+    "api": "tsc && node export/server/index.js",
     "start": "node scripts/start.js",
     "dev": "npm run start",
     "build": "tsc",
