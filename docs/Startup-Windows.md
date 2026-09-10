@@ -67,9 +67,7 @@ Invoke-RestMethod http://127.0.0.1:3000/health
 保持第一个窗口运行，再打开第二个 PowerShell 窗口，执行：
 
 ```powershell
-cloudflared tunnel --protocol http2 --edge-ip-version 4 `
-  --config C:\Users\Admin\.cloudflared\config.yml `
-  run 456bf58f-5985-450e-ae77-cb225527c341
+cloudflared tunnel --protocol http2 --edge-ip-version 4 --config C:\Users\Admin\.cloudflared\config.yml run 456bf58f-5985-450e-ae77-cb225527c341
 ```
 
 看到以下日志，表示隧道已连接：

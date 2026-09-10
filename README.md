@@ -17,7 +17,9 @@ npm start
 ```
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The browser application
-uses `http://127.0.0.1:3000` for its API by default.
+uses the current site origin for the API when accessed through a public
+domain or reverse proxy. When accessing the built-in Web server directly on
+port `5173`, it uses the same host on port `3000` for the API.
 
 Set `API_HOST` / `API_PORT` to configure the API listener, or `WEB_HOST` /
 `WEB_PORT` to configure the static Web server. See
